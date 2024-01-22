@@ -21,17 +21,6 @@ struct BridgeTransfer {
     string  data;
 }
 
-struct Bridge {
-    address addr;
-    string chain;
-}
-
-struct Validator {
-    address addr;
-    uint256 warrantyAmount;
-    uint256 totalLossAmount;
-}
-
 contract EVMBridgeERC20Minter is ERC20 {
 
     using SafeMath for uint256;
@@ -42,6 +31,7 @@ contract EVMBridgeERC20Minter is ERC20 {
     string  public chain;
 
     uint256 public feesInDollar;
+    uint256 public defaultFeesInETH;
     uint256 public minimumTransferQuantity;
 
     uint256 private blocksLength;
@@ -65,6 +55,7 @@ contract EVMBridgeERC20Minter is ERC20 {
         program = _msgSender();
         chain = _bridgeChain;
         minimumTransferQuantity = 1 ether;
+        defaultFeesInETH = 0;
     }
 
     modifier onlyOwner() {
@@ -97,12 +88,16 @@ contract EVMBridgeERC20Minter is ERC20 {
         feesInDollar = cost;
     }
 
+    function setDefaultFeesInETH(uint256 cost) public onlyOwner {
+        defaultFeesInETH = cost;
+    }
+
     function getFeesInETH() public view returns (uint256) {
         if (dex_pool != address(0)) {
             uint256 oneDollar = getTokenPriceOutFromPoolBalance(dex_in, dex_out, dex_pool);
             return oneDollar.mul(1 ether).div(feesInDollar).mul(100); // multiplication 1 ether pour decaler les decimals.
         }
-        return 0;
+        return defaultFeesInETH;
     }
 
     function wrap() public payable noReentrant {
