@@ -1,22 +1,16 @@
+const { ethers } = require("ethers");
 const hre = require("hardhat");
 
 async function main() {
-  const chain = "GLQ";
+  const bridgeAddress = '0xbeED106D0f2e6950BFa1Eec74E1253CA0a643442';
+  const BridgeContract = await (await hre.ethers.getContractFactory("EVMBridgeERC20Minter")).attach(bridgeAddress);;
+  const amount = ethers.utils.parseEther("0.001").toString();
 
-  const BridgeContract = await hre.ethers.getContractFactory("EVMBridgeERC20Minter");
-  const bridge = await BridgeContract.deploy(
-    chain,
-    "WGLQTESTName2",
-    "WGLQTEST2"
-  );
+  const data = await BridgeContract.setMinimumTransferQuantity(amount);
 
-  console.log(bridge);
+  console.log(await data.wait());
 
-  await bridge.deployed();
-
-  console.log(
-    `Bridge deployed to ${bridge.address}`
-  );
+  console.log('minimumTransferQuantity', (await BridgeContract.minimumTransferQuantity()).toString());
 }
 
 // We recommend this pattern to be able to use async/await everywhere

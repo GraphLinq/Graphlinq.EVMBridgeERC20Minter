@@ -10,10 +10,25 @@ module.exports = {
       polygon: secret.POLYGON_SCAN_KEY,
       avalanche: secret.SNOWTRACE_KEY,
       opera: secret.FTM_SCAN_KEY,
-      optimisticEthereum: secret.OP_SCAN_KEY
+      optimisticEthereum: secret.OP_SCAN_KEY,
+      mainnet: secret.ETHER_SCAN_API_KEY
     }
   },
   networks: {
+    mainnet: {
+      // truffle deploy --network eth
+      url: `https://mainnet.infura.io/v3/00e69497300347a38e75c3287621cb16`,
+      accounts: [secret.MMENOMIC],
+    },
+    goerli: {
+      // truffle deploy --network eth
+      url: `https://goerli.infura.io/v3/00e69497300347a38e75c3287621cb16`,
+      accounts: [secret.MMENOMIC],
+    },
+    sepolia: {
+      url: `https://sepolia.infura.io/v3/00e69497300347a38e75c3287621cb16`,
+      accounts: [secret.MMENOMIC],
+    },
     glq: {
       // truffle deploy --network fantom
       url: `https://glq-dataseed.graphlinq.io`,
@@ -34,7 +49,7 @@ module.exports = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 200
+        runs: 10000
       }
     }
   }
