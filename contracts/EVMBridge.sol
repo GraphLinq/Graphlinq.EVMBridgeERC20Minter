@@ -6,31 +6,6 @@ import "./utils/TransferHelper.sol";
 import "./libs/SafeMath.sol";
 import "./libs/SignedSafeMath.sol";
 
-struct Transfer {
-    bytes32 hash;
-    address from;
-    address coin;
-    uint256 quantity;
-    string  fromChain;
-    string  toChain;
-    uint256 feesInToken;
-    uint256 feesInETH;
-    uint256 blockTimestamp;
-    uint256 blockNumber;
-    string  data;
-}
-
-struct Bridge {
-    address addr;
-    string chain;
-}
-
-struct Validator {
-    address addr;
-    uint256 warrantyAmount;
-    uint256 totalLossAmount;
-}
-
 /**
  * @title EVMBridge
  * @author Jeremy Guyet (@jguyet)
@@ -54,18 +29,15 @@ contract EVMBridge {
 
     uint256 public feesInDollar;
     uint256 public defaultFeesInETH;
-    uint256 public feesInTokenPercentage;
     uint256 public minimumTransferQuantity;
 
-    uint256 public bridgeFeesInToken;
-    uint256 public lockAskDuration;
-    uint256 public unlockAskDuration;
-    uint256 public unlockAskTime;
+    //event emitted when new transfer on GLQ bridge
+    event Transfer(
+        uint256 amount,
+        string  toChain
+    );
 
-    uint256 private blocksLength;
-    mapping(bytes32 => uint256) private transfersIndexs;
-    Transfer[] private transfers;
-    mapping(bytes32 => bytes32) private transfersHashs;
+    mapping(address => mapping(uint256 => bool)) transfers;
 
     // Private dex information
     address private dex_in;
@@ -79,23 +51,14 @@ contract EVMBridge {
         string memory _bridgeChain,
         address _token,
         uint256 _feesInDollar,
-        uint256 _feesInTokenPercentage,
-        address _dex_in,
-        address _dex_out,
-        address _dex_pool) {
+        uint256 _minimumTransferQuantity) {
         require(msg.sender != address(0), "ABORT sender - address(0)");
         token = _token;
         owner = msg.sender;
         program = msg.sender;
         chain = _bridgeChain;
         feesInDollar = _feesInDollar;
-        feesInTokenPercentage = _feesInTokenPercentage;
-        dex_in = _dex_in;
-        dex_out = _dex_out;
-        dex_pool = _dex_pool;
-        minimumTransferQuantity = 1 ether;
-        lockAskDuration = uint256(86400).mul(2); // 2 days
-        unlockAskDuration = uint256(86400).mul(15); // 15 days
+        minimumTransferQuantity = _minimumTransferQuantity;
         defaultFeesInETH = 0;
     }
 
@@ -141,91 +104,17 @@ contract EVMBridge {
         return defaultFeesInETH;
     }
 
-    function getFeesInTokenByQuantity(uint256 quantity) public view returns (uint256) {
-        if (feesInTokenPercentage == 0) {
-            return 0;
-        }
-        uint256 transferFees = quantity.div(100).mul(feesInTokenPercentage);
-        return transferFees;
-    }
-
-    function setFeesInTokenPercentage(uint256 feesInPercentage) public onlyOwner {
-        feesInTokenPercentage = feesInPercentage;
-    }
-    
-    function initTransfer(uint256 quantity, string calldata toChain, string calldata data) public payable noReentrant activated {
-        require(msg.value >= getFeesInETH().mul(90).div(100),
-            "PAYMENT_ABORT" // 90% of the fees minimum
-        );
+    function initTransfer(uint256 quantity, string calldata toChain) public payable noReentrant activated {
         require(quantity >= minimumTransferQuantity,
             "INSUFISANT_QUANTITY"
+        );
+        require(msg.value >= getFeesInETH().mul(90).div(100),
+            "PAYMENT_ABORT" // 90% of the fees minimum
         );
         require(IERC20(token).balanceOf(msg.sender) >= quantity, "INSUFISANT_BALANCE");
         require(IERC20(token).allowance(msg.sender, address(this)) >= quantity, "INSUFISANT_ALLOWANCE");
         TransferHelper.safeTransferFrom(token, msg.sender, address(this), quantity);
-        
-        uint256 transferFeesInToken = getFeesInTokenByQuantity(quantity);
-        uint256 transferQuantity = quantity.sub(transferFeesInToken);
-        uint256 transferETHFees = msg.value;
-
-        bridgeFeesInToken += transferFeesInToken;
-        uint256 index = transfers.length;
-        bytes32 transferHash = _getHash(block.timestamp, 0, msg.sender);
-
-        transfers.push(Transfer(
-            transferHash,
-            msg.sender,
-            token,
-            transferQuantity,
-            chain,
-            toChain,
-            transferFeesInToken,
-            transferETHFees,
-            block.timestamp,
-            block.number,
-            data
-        ));
-        transfersIndexs[transferHash] = index;
-        transfersHashs[transferHash] = transferHash;
-    }
-
-    function transferExists(bytes32 transferHash) public view returns (bool) {
-        return transfersHashs[transferHash] == transferHash;
-    }
-
-    function getTransfer(bytes32 transferHash) public view returns (Transfer memory) {
-        return transfers[transfersIndexs[transferHash]];
-    }
-
-    function getTransferLength() public view returns (uint256) {
-        return transfers.length;
-    }
-
-    function getTransfers(int256 page, int256 pageSize) external view returns (Transfer[] memory) {
-        uint256 poolLength = transfers.length;
-        int256 queryStartPoolIndex = int256(poolLength).sub(pageSize.mul(page.add(1))).add(pageSize);
-        require(queryStartPoolIndex >= 0, "Out of bounds");
-        int256 queryEndPoolIndex = queryStartPoolIndex.sub(pageSize);
-        if (queryEndPoolIndex < 0) {
-            queryEndPoolIndex = 0;
-        }
-        int256 currentPoolIndex = queryStartPoolIndex;
-        require(uint256(currentPoolIndex) <= poolLength, "Out of bounds");
-        Transfer[] memory results = new Transfer[](uint256(currentPoolIndex - queryEndPoolIndex));
-        uint256 index = 0;
-
-        for (currentPoolIndex; currentPoolIndex > queryEndPoolIndex; currentPoolIndex--) {
-            Transfer memory transfer = transfers[uint256(currentPoolIndex).sub(1)];
-            results[index] = transfer;
-            index++;
-        }
-        return results;
-    }
-
-    function collectTokenFees() public onlyOwner {
-        require(IERC20(token).balanceOf(address(this)) >= bridgeFeesInToken, "INSUFISANT_BALANCE");
-        TransferHelper.safeTransfer(token, msg.sender, bridgeFeesInToken);
-        bridgeFeesInToken = 0;
+        emit Transfer(quantity, toChain);
     }
 
     function deposit(address coin, uint256 quantity) public onlyOwner noReentrant {
@@ -238,60 +127,29 @@ contract EVMBridge {
         return payable(address(this)).balance;
     }
 
-    function depositETH(uint256 quantity) public payable onlyOwner noReentrant {
-        require(msg.value >= quantity,
-            "PAYMENT_ABORT"
-        );
+    function getFees() public view returns (uint256) {
+        return balance();
     }
 
-    function withdrawETH(uint quantity) public onlyOwner noReentrant {
-        require(quantity <= balance(), "Insufficient balance");
-        (bool success,)=owner.call{value:quantity}("");
-        require(success, "Transfer failed!");
+    function claimFees() public onlyOwner noReentrant {
+        (bool success,)=owner.call{value:balance()}("");
+        require(success, "BridgeTransfer failed!");
     }
 
-    function withdraw(address coin, uint256 quantity) public onlyOwner noReentrant {
-        require(unlockAskTime < block.timestamp.sub(lockAskDuration), "2_DAYS_MINIMUM_LOCKED_PERIOD");
-        require(unlockAskTime > block.timestamp.sub(unlockAskDuration), "15_DAYS_MAXIMUM_UNLOCKED_PERIOD");
-        require(IERC20(coin).balanceOf(address(this)) >= quantity, "INSUFISANT_BALANCE");
-        TransferHelper.safeTransfer(coin, msg.sender, quantity);
+    function setTransferProcessed(address sender, uint256 transferBn) private {
+        transfers[sender][transferBn] = true;
     }
 
-    function askWithdraw() public onlyOwner noReentrant {
-        unlockAskTime = block.timestamp;
+    function isTransferProcessed(address sender, uint256 transferBn) public view returns (bool) {
+        return transfers[sender][transferBn];
     }
 
-    function getLastsTransfers(uint256 size) external view returns (Transfer[] memory) {
-        uint256 poolLength = transfers.length;
-        uint256 start = 0;
-        uint256 memorySize = size;
+    function addTransferFrom(address to, uint256 amount, uint256 bn) public onlyProgramOrOwner {
+        require(bn < block.number, "Invalid request");
+        require(isTransferProcessed(to, bn) == false, "Bridge request already processed.");
 
-        if (transfers.length > size) {
-            start = transfers.length.sub(size);
-        } else {
-            memorySize = transfers.length;
-        }
-        uint256 currentIndex = start;
-        Transfer[] memory results = new Transfer[](memorySize);
-        uint256 memoryIndex = 0;
-
-        for (currentIndex; currentIndex < poolLength; currentIndex++) {
-            Transfer memory transfer = transfers[currentIndex];
-            results[memoryIndex++] = transfer;
-        }
-        return results;
-    }
-
-    function addTransfersFrom(string[] memory /* fromChains */, address[] memory transfersAddresses, uint256[] memory amounts, bytes32[] memory _transfersHashs) public onlyProgramOrOwner {
-        for (uint256 i = 0; i < transfersAddresses.length; i++) {
-            address transferAddress = transfersAddresses[i];
-            uint256 amount = amounts[i];
-            bytes32 transferHash = _transfersHashs[i];
-
-            require(transfersHashs[transferHash] == 0, "Already transfered");
-            TransferHelper.safeTransfer(token, transferAddress, amount);
-            transfersHashs[transferHash] = transferHash;
-        }
+        setTransferProcessed(to, bn);
+        TransferHelper.safeTransfer(token, to, amount);
     }
 
     function getDex() public view returns (address, address, address) {

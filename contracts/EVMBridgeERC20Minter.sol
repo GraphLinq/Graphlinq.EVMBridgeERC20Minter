@@ -7,20 +7,6 @@ import "./utils/TransferHelper.sol";
 import "./libs/SafeMath.sol";
 import "./libs/SignedSafeMath.sol";
 
-struct BridgeTransfer {
-    bytes32 hash;
-    address from;
-    address coin;
-    uint256 quantity;
-    string  fromChain;
-    string  toChain;
-    uint256 feesInToken;
-    uint256 feesInETH;
-    uint256 blockTimestamp;
-    uint256 blockNumber;
-    string  data;
-}
-
 contract EVMBridgeERC20Minter is ERC20 {
 
     using SafeMath for uint256;
@@ -34,10 +20,13 @@ contract EVMBridgeERC20Minter is ERC20 {
     uint256 public defaultFeesInETH;
     uint256 public minimumTransferQuantity;
 
-    uint256 private blocksLength;
-    mapping(bytes32 => uint256) private transfersIndexs;
-    BridgeTransfer[] private transfers;
-    mapping(bytes32 => bytes32) private transfersHashs;
+    //event emitted when new transfer on GLQ bridge
+    event Transfer(
+        uint256 amount,
+        string  toChain
+    );
+
+    mapping(address => mapping(uint256 => bool)) transfers;
 
     // Private dex information
     address private dex_in;
@@ -49,12 +38,18 @@ contract EVMBridgeERC20Minter is ERC20 {
 
     event NewBridgeTransferEvent(bytes32 hash);
 
-    constructor(string memory _bridgeChain, string memory name, string memory symbol) ERC20(name, symbol, 0, 18) {
+    constructor(
+        string memory _bridgeChain,
+        uint256 _feesInDollar,
+        uint256 _minimumTransferQuantity,
+        string memory name,
+        string memory symbol) ERC20(name, symbol, 0, 18) {
         require(_msgSender() != address(0), "Bridge: deploy from the zero address");
         owner = _msgSender();
         program = _msgSender();
         chain = _bridgeChain;
-        minimumTransferQuantity = 1 ether;
+        feesInDollar = _feesInDollar;
+        minimumTransferQuantity = _minimumTransferQuantity;
         defaultFeesInETH = 0;
     }
 
@@ -117,72 +112,18 @@ contract EVMBridgeERC20Minter is ERC20 {
         require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: BURN_FAILED');
         _burn(msg.sender, amount);
     }
-    
-    function initTransfer(uint256 quantity, string calldata toChain, string calldata data) public payable noReentrant activated {
-        require(msg.value >= getFeesInETH(),
-            "PAYMENT_ABORT"
-        );
+
+    function initTransfer(uint256 quantity, string calldata toChain) public payable noReentrant activated {
         require(quantity >= minimumTransferQuantity,
             "INSUFISANT_QUANTITY"
+        );
+        require(msg.value >= getFeesInETH().mul(90).div(100),
+            "PAYMENT_ABORT" // 90% of the fees minimum
         );
         require(balanceOf(msg.sender) >= quantity, "INSUFISANT_BALANCE");
         require(allowance(msg.sender, address(this)) >= quantity, "INSUFISANT_ALLOWANCE");
         _burn(msg.sender, quantity);
-
-        uint256 transferQuantity = quantity;
-        uint256 transferETHFees = msg.value;
-        uint256 index = transfers.length;
-        bytes32 transferHash = _getHash(block.timestamp, 0, msg.sender);
-
-        transfers.push(BridgeTransfer(
-            transferHash,
-            msg.sender,
-            address(this),
-            transferQuantity,
-            chain,
-            toChain,
-            0,
-            transferETHFees,
-            block.timestamp,
-            block.number,
-            data
-        ));
-        transfersIndexs[transferHash] = index;
-        transfersHashs[transferHash] = transferHash;
-        emit NewBridgeTransferEvent(transferHash);
-    }
-
-    function transferExists(bytes32 transferHash) public view returns (bool) {
-        return transfersHashs[transferHash] == transferHash;
-    }
-
-    function getTransfer(bytes32 transferHash) public view returns (BridgeTransfer memory) {
-        return transfers[transfersIndexs[transferHash]];
-    }
-
-    function getTransferLength() public view returns (uint256) {
-        return transfers.length;
-    }
-
-    function getTransfers(int256 page, int256 pageSize) external view returns (BridgeTransfer[] memory) {
-        uint256 poolLength = transfers.length;
-        int256 queryStartPoolIndex = int256(poolLength).sub(pageSize.mul(page.add(1))).add(pageSize);
-        require(queryStartPoolIndex >= 0, "Out of bounds");
-        int256 queryEndPoolIndex = queryStartPoolIndex.sub(pageSize);
-        if (queryEndPoolIndex < 0) {
-            queryEndPoolIndex = 0;
-        }
-        int256 currentPoolIndex = queryStartPoolIndex;
-        require(uint256(currentPoolIndex) <= poolLength, "Out of bounds");
-        BridgeTransfer[] memory results = new BridgeTransfer[](uint256(currentPoolIndex - queryEndPoolIndex));
-        uint256 index = 0;
-
-        for (currentPoolIndex; currentPoolIndex > queryEndPoolIndex; currentPoolIndex--) {
-            BridgeTransfer memory transfer = transfers[uint256(currentPoolIndex).sub(1)];
-            results[index] = transfer;
-            index++;
-        }
-        return results;
+        emit Transfer(quantity, toChain);
     }
 
     function deposit(address coin, uint256 quantity) public onlyOwner noReentrant {
@@ -195,49 +136,29 @@ contract EVMBridgeERC20Minter is ERC20 {
         return payable(address(this)).balance;
     }
 
-    function depositETH(uint256 quantity) public payable onlyOwner noReentrant {
-        require(msg.value >= quantity,
-            "PAYMENT_ABORT"
-        );
+    function getFees() public view returns (uint256) {
+        return balance();
     }
 
-    function withdrawETH(uint quantity) public onlyOwner noReentrant {
-        require(quantity <= balance(), "Insufficient balance");
-        (bool success,)=owner.call{value:quantity}("");
+    function claimFees() public onlyOwner noReentrant {
+        (bool success,)=owner.call{value:balance()}("");
         require(success, "BridgeTransfer failed!");
     }
 
-    function getLastsTransfers(uint256 size) external view returns (BridgeTransfer[] memory) {
-        uint256 poolLength = transfers.length;
-        uint256 start = 0;
-        uint256 memorySize = size;
-
-        if (transfers.length > size) {
-            start = transfers.length.sub(size);
-        } else {
-            memorySize = transfers.length;
-        }
-        uint256 currentIndex = start;
-        BridgeTransfer[] memory results = new BridgeTransfer[](memorySize);
-        uint256 memoryIndex = 0;
-
-        for (currentIndex; currentIndex < poolLength; currentIndex++) {
-            BridgeTransfer memory transfer = transfers[currentIndex];
-            results[memoryIndex++] = transfer;
-        }
-        return results;
+    function setTransferProcessed(address sender, uint256 transferBn) private {
+        transfers[sender][transferBn] = true;
     }
 
-    function addTransfersFrom(string[] memory /* fromChains */, address[] memory transfersAddresses, uint256[] memory amounts, bytes32[] memory _transfersHashs) public onlyProgramOrOwner {
-        for (uint256 i = 0; i < transfersAddresses.length; i++) {
-            address transferAddress = transfersAddresses[i];
-            uint256 amount = amounts[i];
-            bytes32 transferHash = _transfersHashs[i];
+    function isTransferProcessed(address sender, uint256 transferBn) public view returns (bool) {
+        return transfers[sender][transferBn];
+    }
 
-            require(transfersHashs[transferHash] == 0, "Already transfered");
-            _mint(transferAddress, amount);
-            transfersHashs[transferHash] = transferHash;
-        }
+    function addTransferFrom(address to, uint256 amount, uint256 bn) public onlyProgramOrOwner {
+        require(bn < block.number, "Invalid request");
+        require(isTransferProcessed(to, bn) == false, "Bridge request already processed.");
+
+        setTransferProcessed(to, bn);
+        _mint(to, amount);
     }
 
     function getDex() public view returns (address, address, address) {

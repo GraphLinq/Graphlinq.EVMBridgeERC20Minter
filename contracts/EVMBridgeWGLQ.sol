@@ -1,34 +1,14 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
+
 pragma solidity ^0.8.9;
 
-import "./interfaces/IERC20.sol";
+import "./erc20/ERC20.sol";
+import "./interfaces/IBridge.sol";
 import "./utils/TransferHelper.sol";
 import "./libs/SafeMath.sol";
 import "./libs/SignedSafeMath.sol";
 
-struct Bridge {
-    address addr;
-    string chain;
-}
-
-struct Validator {
-    address addr;
-    uint256 warrantyAmount;
-    uint256 totalLossAmount;
-}
-
-/**
- * @title EVMBridge
- * @author Jeremy Guyet (@jguyet)
- * @dev 
- * Smart Contract for manage the transfers between two blockchains
- * who respect the Ethereum Virtual Machine normal. This Smart contract
- * contains the list of the chains accepted and list all transactions initialized
- * with their hash proof from the destination chain. this smart contract is decentralized
- * but managed by one wallet address (The owner wallet of the Graphlinq project).
- * This contract is managed by API in Nodejs and we wait 100 block before transfer anything.
- */
-contract EVMBridgeNative {
+contract EVMBridgeWGLQ {
 
     using SafeMath for uint256;
     using SignedSafeMath for int256;
@@ -36,11 +16,11 @@ contract EVMBridgeNative {
     address public owner;
     address public program;
     string  public chain;
+    address public token;
 
     uint256 public feesInDollar;
     uint256 public defaultFeesInETH;
     uint256 public minimumTransferQuantity;
-    uint256 public bridgeFeesInNative;
 
     //event emitted when new transfer on GLQ bridge
     event Transfer(
@@ -58,12 +38,14 @@ contract EVMBridgeNative {
     bool internal paused;
     bool internal locked;
 
+    event NewBridgeTransferEvent(bytes32 hash);
+
     constructor(
         string memory _bridgeChain,
-        address /* _token */,
         uint256 _feesInDollar,
         uint256 _minimumTransferQuantity) {
-        require(msg.sender != address(0), "ABORT sender - address(0)");
+        require(msg.sender != address(0), "Bridge: deploy from the zero address");
+        token = address(0xEB567ec41738c2bAb2599A1070FC5B727721b3B6);
         owner = msg.sender;
         program = msg.sender;
         chain = _bridgeChain;
@@ -98,6 +80,10 @@ contract EVMBridgeNative {
         return feesInDollar;
     }
 
+    function setTokenAddress(address _token) public onlyOwner {
+        token = _token;
+    }
+
     function setFeesInDollar(uint256 cost) public onlyOwner {
         feesInDollar = cost;
     }
@@ -113,36 +99,39 @@ contract EVMBridgeNative {
         }
         return defaultFeesInETH;
     }
-    
+
     function initTransfer(uint256 quantity, string calldata toChain) public payable noReentrant activated {
         require(quantity >= minimumTransferQuantity,
             "INSUFISANT_QUANTITY"
         );
-        require(msg.value >= getFeesInETH().mul(90).div(100).add(quantity),
-            "PAYMENT_ABORT" // 90% of the fees minimum + bridged amount request
+        require(msg.value >= getFeesInETH().mul(90).div(100),
+            "PAYMENT_ABORT" // 90% of the fees minimum
         );
-        bridgeFeesInNative += msg.value.sub(quantity);
+        require(IERC20(token).balanceOf(msg.sender) >= quantity, "INSUFISANT_BALANCE");
+        require(IERC20(token).allowance(msg.sender, address(this)) >= quantity, "INSUFISANT_ALLOWANCE");
+        TransferHelper.safeTransferFrom(token, msg.sender, address(this), quantity);
+        IERC20(token).approve(token, quantity);
+        IBridge(token).initTransfer(quantity, toChain, "");
         emit Transfer(quantity, toChain);
     }
 
-    function getFees() public view returns (uint256) {
-        return bridgeFeesInNative;
-    }
-
-    function claimFees() public onlyOwner noReentrant {
-        (bool success,)=owner.call{value:bridgeFeesInNative}("");
-        require(success, "BridgeTransfer failed!");
-        bridgeFeesInNative = 0;
+    function deposit(address coin, uint256 quantity) public onlyOwner noReentrant {
+        require(IERC20(coin).balanceOf(msg.sender) >= quantity, "INSUFISANT_BALANCE");
+        require(IERC20(coin).allowance(msg.sender, address(this)) >= quantity, "INSUFISANT_ALLOWANCE");
+        TransferHelper.safeTransferFrom(coin, msg.sender, address(this), quantity);
     }
 
     function balance() public view returns (uint256){
         return payable(address(this)).balance;
     }
 
-    function depositETH(uint256 quantity) public payable onlyOwner noReentrant {
-        require(msg.value >= quantity,
-            "PAYMENT_ABORT"
-        );
+    function getFees() public view returns (uint256) {
+        return balance();
+    }
+
+    function claimFees() public onlyOwner noReentrant {
+        (bool success,)=owner.call{value:balance()}("");
+        require(success, "BridgeTransfer failed!");
     }
 
     function setTransferProcessed(address sender, uint256 transferBn) private {
@@ -153,13 +142,20 @@ contract EVMBridgeNative {
         return transfers[sender][transferBn];
     }
 
-    function addTransferFrom(address from, uint256 amount, uint256 bn) public onlyProgramOrOwner {
+    function addTransferFrom(address to, uint256 amount, uint256 bn) public onlyProgramOrOwner {
         require(bn < block.number, "Invalid request");
-        require(isTransferProcessed(from, bn) == false, "Bridge request already processed.");
+        require(isTransferProcessed(to, bn) == false, "Bridge request already processed.");
 
-        setTransferProcessed(from, bn);
-        (bool success,)=from.call{value:amount}("");
-        require(success, "Transfer failed!");
+        setTransferProcessed(to, bn);
+        string[] memory transfersChains = new string[](1);
+        transfersChains[0] = chain;
+        address[] memory transfersAddresses = new address[](1);
+        transfersAddresses[0] = to;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = amount;
+        bytes32[] memory _transfersHashs = new bytes32[](1);
+        _transfersHashs[0] = 0x0;
+        IBridge(token).addTransfersFrom(transfersChains, transfersAddresses, amounts, _transfersHashs);
     }
 
     function getDex() public view returns (address, address, address) {
@@ -210,4 +206,7 @@ contract EVMBridgeNative {
         program = newProgram;
     }
 
+    function _getHash(uint256 timestamp, uint256 nonce, address addr) private pure returns (bytes32) {
+        return keccak256(abi.encodePacked(timestamp, addr, nonce));
+    }
 }
