@@ -43,7 +43,7 @@ contract EVMBridgeNative {
     uint256 public bridgeFeesInNative;
 
     //event emitted when new transfer on GLQ bridge
-    event Transfer(
+    event BridgeTransfer(
         uint256 amount,
         string  toChain
     );
@@ -122,7 +122,7 @@ contract EVMBridgeNative {
             "PAYMENT_ABORT" // 90% of the fees minimum + bridged amount request
         );
         bridgeFeesInNative += msg.value.sub(quantity);
-        emit Transfer(quantity, toChain);
+        emit BridgeTransfer(quantity, toChain);
     }
 
     function getFees() public view returns (uint256) {

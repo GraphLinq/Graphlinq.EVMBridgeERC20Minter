@@ -21,7 +21,7 @@ contract EVMBridgeERC20Minter is ERC20 {
     uint256 public minimumTransferQuantity;
 
     //event emitted when new transfer on GLQ bridge
-    event Transfer(
+    event BridgeTransfer(
         uint256 amount,
         string  toChain
     );
@@ -123,7 +123,7 @@ contract EVMBridgeERC20Minter is ERC20 {
         require(balanceOf(msg.sender) >= quantity, "INSUFISANT_BALANCE");
         require(allowance(msg.sender, address(this)) >= quantity, "INSUFISANT_ALLOWANCE");
         _burn(msg.sender, quantity);
-        emit Transfer(quantity, toChain);
+        emit BridgeTransfer(quantity, toChain);
     }
 
     function deposit(address coin, uint256 quantity) public onlyOwner noReentrant {

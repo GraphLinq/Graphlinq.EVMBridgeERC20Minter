@@ -23,7 +23,7 @@ contract EVMBridgeWGLQ {
     uint256 public minimumTransferQuantity;
 
     //event emitted when new transfer on GLQ bridge
-    event Transfer(
+    event BridgeTransfer(
         uint256 amount,
         string  toChain
     );
@@ -112,7 +112,7 @@ contract EVMBridgeWGLQ {
         TransferHelper.safeTransferFrom(token, msg.sender, address(this), quantity);
         IERC20(token).approve(token, quantity);
         IBridge(token).initTransfer(quantity, toChain, "");
-        emit Transfer(quantity, toChain);
+        emit BridgeTransfer(quantity, toChain);
     }
 
     function deposit(address coin, uint256 quantity) public onlyOwner noReentrant {
