@@ -154,7 +154,6 @@ contract EVMBridgeNative {
     }
 
     function addTransferFrom(address from, uint256 amount, uint256 bn) public onlyProgramOrOwner {
-        require(bn < block.number, "Invalid request");
         require(isTransferProcessed(from, bn) == false, "Bridge request already processed.");
 
         setTransferProcessed(from, bn);

@@ -2,10 +2,10 @@ const hre = require("hardhat");
 
 async function main() {
 
-  const bridgeAddress = "0xEB567ec41738c2bAb2599A1070FC5B727721b3B6";
+  const bridgeAddress = "0xbeED106D0f2e6950BFa1Eec74E1253CA0a643442";
   const BridgeContract = await (await ethers.getContractFactory("EVMBridgeERC20Minter")).attach(bridgeAddress);
   const tx = await BridgeContract.changeProgram(
-    "0x3251E809d4bD3E32d9CF199B8D8c856E97007D32"
+    "0x991Dd4aaeE99b175226C7B22885564780dE46141"
   );
 
   console.log(tx);

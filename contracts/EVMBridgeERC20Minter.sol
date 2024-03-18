@@ -154,7 +154,6 @@ contract EVMBridgeERC20Minter is ERC20 {
     }
 
     function addTransferFrom(address to, uint256 amount, uint256 bn) public onlyProgramOrOwner {
-        require(bn < block.number, "Invalid request");
         require(isTransferProcessed(to, bn) == false, "Bridge request already processed.");
 
         setTransferProcessed(to, bn);
