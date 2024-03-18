@@ -2,8 +2,9 @@ const hre = require("hardhat");
 
 async function main() {
   // DEPLOYED => 0xa5404410d93B5D30D1888Ed107129BFE81705153
-  const BridgeContract = await hre.ethers.getContractFactory("EVMBridgeWGLQ");
+  const BridgeContract = await hre.ethers.getContractFactory("EVMBridgeConnectedToERC20Minter");
   const bridge = await BridgeContract.deploy(
+    "0xEB567ec41738c2bAb2599A1070FC5B727721b3B6", // WGLQ token
     "GLQ", // chain
     "10000000000000000000", // 10 Dollars
     "1000000000000000000" // 1 GLQ

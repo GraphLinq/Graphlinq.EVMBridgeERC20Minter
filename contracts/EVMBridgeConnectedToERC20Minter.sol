@@ -8,7 +8,7 @@ import "./utils/TransferHelper.sol";
 import "./libs/SafeMath.sol";
 import "./libs/SignedSafeMath.sol";
 
-contract EVMBridgeWGLQ {
+contract EVMBridgeConnectedToERC20Minter {
 
     using SafeMath for uint256;
     using SignedSafeMath for int256;
@@ -41,11 +41,12 @@ contract EVMBridgeWGLQ {
     event NewBridgeTransferEvent(bytes32 hash);
 
     constructor(
+        address _token,
         string memory _bridgeChain,
         uint256 _feesInDollar,
         uint256 _minimumTransferQuantity) {
         require(msg.sender != address(0), "Bridge: deploy from the zero address");
-        token = address(0xEB567ec41738c2bAb2599A1070FC5B727721b3B6);
+        token = _token;
         owner = msg.sender;
         program = msg.sender;
         chain = _bridgeChain;
