@@ -1,13 +1,14 @@
 const hre = require("hardhat");
 
 async function main() {
-  // DEPLOYED => 0x
-  const BridgeContract = await hre.ethers.getContractFactory("EVMBridgeNative");
+  // DEPLOYED => 0x6518E3160eFC496CD3451eC4aE52E99cfee20697
+  const BridgeContract = await hre.ethers.getContractFactory("EVMBridgeERC20Minter");
   const bridge = await BridgeContract.deploy(
-    "ETH",
-    "0x0000000000000000000000000000000000000000",
+    "GLQ", // chain
     "10000000000000000000", // 10 Dollars
-    "100000000000000" // 0,0001 WETH
+    "1000000000000", // 0,000001 BTC
+    "Wrapped Bitcoin", // Name
+    "WBTC" // Symbol
   );
 
   console.log(bridge);
@@ -15,7 +16,7 @@ async function main() {
   await bridge.deployed();
 
   console.log(
-    `WETHBridge deployed to ${bridge.address}`
+    `WGLQBridge deployed to ${bridge.address}`
   );
 }
 
